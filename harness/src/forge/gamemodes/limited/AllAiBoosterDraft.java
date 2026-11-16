@@ -20,6 +20,15 @@ public class AllAiBoosterDraft extends BoosterDraft {
     }
 
     public static AllAiBoosterDraft create(CardBlock block, String setCode, int rounds, int podSize) {
+        return create(block, setCode, rounds, podSize, null);
+    }
+
+    /**
+     * @param customRankings ranking file to draft and build decks by instead of
+     *                       Forge's own, or null. Forge resolves it relative to res/draft/.
+     */
+    public static AllAiBoosterDraft create(CardBlock block, String setCode, int rounds, int podSize,
+                                           String customRankings) {
         AllAiBoosterDraft draft = new AllAiBoosterDraft(podSize);
         draft.setHumanSeats(Set.of());
 
@@ -31,7 +40,7 @@ public class AllAiBoosterDraft extends BoosterDraft {
             draft.product.add(block.getBooster(setCode));
         }
         IBoosterDraft.LAND_SET_CODE[0] = block.getLandSet();
-        IBoosterDraft.CUSTOM_RANKINGS_FILE[0] = null;
+        IBoosterDraft.CUSTOM_RANKINGS_FILE[0] = customRankings;
 
         draft.initializeBoosters();
         return draft;

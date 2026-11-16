@@ -11,13 +11,16 @@ import forge.item.PaperCard;
 import forge.model.CardBlock;
 import forge.model.FModel;
 
+import forge.localinstance.properties.ForgeConstants;
+
 import java.io.File;
+import java.nio.file.Path;
 
 /**
  * Runs N fully-AI 8-player booster drafts of one set and writes each seat's
  * 40-card deck as a .dck file (the rest of the pool goes to the sideboard).
  *
- * Usage: DraftSim <SETCODE> <numDrafts> <outDir>
+ * Usage: DraftSim <SETCODE> <numDrafts> <outDir> [rankingsFile]
  * Must be started with the forge-gui directory as working directory (for res/).
  */
 public class DraftSim {
@@ -29,6 +32,13 @@ public class DraftSim {
 
         GuiBase.setInterface(new GuiDesktop());
         FModel.initialize(null, null);
+
+        // Optional ranking file replacing Forge's; Forge resolves it relative to res/draft/
+        String customRankings = null;
+        if (args.length > 3) {
+            Path draftDir = Path.of(ForgeConstants.DRAFT_DIR).toAbsolutePath();
+            customRankings = draftDir.relativize(Path.of(args[3]).toAbsolutePath()).toString();
+        }
 
         CardBlock block = null;
         for (CardBlock b : FModel.getBlocks()) {
@@ -42,7 +52,7 @@ public class DraftSim {
         long t0 = System.currentTimeMillis();
         int written = 0;
         for (int d = 0; d < numDrafts; d++) {
-            AllAiBoosterDraft draft = AllAiBoosterDraft.create(block, setCode, 3, 8);
+            AllAiBoosterDraft draft = AllAiBoosterDraft.create(block, setCode, 3, 8, customRankings);
             LimitedPlayerAI seat0 = (LimitedPlayerAI) draft.getHumanPlayer();
 
             while (draft.hasNextChoice()) {

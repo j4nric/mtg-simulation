@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
 # Simulates drafts and then AI-vs-AI games for one set.
 #
-# Usage: scripts/run_sim.sh <SET> <numDrafts> <gamesPerWorker> <workers> <outDir>
+# Usage: scripts/run_sim.sh <SET> <numDrafts> <gamesPerWorker> <workers> <outDir> [rankings.rnk]
+#   rankings.rnk  draft by this ranking instead of Forge's (see analysis/make_blind_rankings.py)
 #   FORGE_DIR  Forge checkout with a built forge-gui-desktop (default: ../card-forge/forge)
 #
 # Each worker is its own JVM. Forge's AI already uses about two cores per game,
@@ -9,6 +10,7 @@
 set -euo pipefail
 
 SET=$1; DRAFTS=$2; GAMES=$3; WORKERS=$4; OUT=$(realpath -m "$5")
+RANKINGS=${6:+$(realpath "$6")}
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 FORGE_DIR=$(realpath "${FORGE_DIR:-$ROOT/../card-forge/forge}")
 JAR=$(ls "$FORGE_DIR"/forge-gui-desktop/target/forge-gui-desktop-*-jar-with-dependencies.jar | head -1)
@@ -21,7 +23,7 @@ cd "$FORGE_DIR/forge-gui"   # Forge looks for res/ in the working directory
 
 if [ -z "$(ls -A "$OUT/decks")" ]; then
   echo "Drafting $DRAFTS pods of $SET ..."
-  java -Xmx2g -Djava.awt.headless=true -cp "$JAR:$BUILD" DraftSim "$SET" "$DRAFTS" "$OUT/decks" \
+  java -Xmx2g -Djava.awt.headless=true -cp "$JAR:$BUILD" DraftSim "$SET" "$DRAFTS" "$OUT/decks" ${RANKINGS:+"$RANKINGS"} \
     > "$OUT/logs/draft.log" 2>&1
   tail -1 "$OUT/logs/draft.log"
 fi

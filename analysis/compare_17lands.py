@@ -1,11 +1,12 @@
 """Compares simulated card stats with real 17Lands card ratings.
 
 Usage:
-  python analysis/compare_17lands.py <sim_cards.csv> <17lands.json|URL> [--min-games N]
+  python analysis/compare_17lands.py <sim_cards.csv> <17lands.json|URL|real.csv> [--min-games N]
 
-<sim_cards.csv> comes from card_stats.py --out. The 17Lands file is the JSON of
+<sim_cards.csv> comes from card_stats.py --out. The 17Lands side is either the JSON of
 https://www.17lands.com/card_ratings/data?expansion=TRK&format=PremierDraft
-(download it in a browser if this machine cannot reach 17lands.com).
+(download it in a browser if this machine cannot reach 17lands.com) or a CSV that
+lands17_card_stats.py computed from 17Lands' public raw game data.
 
 Reports the rank correlation (Spearman) of GIH WR and GP WR, and the cards on
 which simulation and reality disagree most. Those are where Forge's AI misplays
@@ -19,6 +20,11 @@ import pandas as pd
 
 
 def load_17lands(src: str) -> pd.DataFrame:
+    if src.endswith(".csv"):
+        # computed from raw game data by lands17_card_stats.py
+        df = pd.read_csv(src)
+        keep = ["GIH_WR", "GIH_n", "GP_WR", "GP_n", "IWD"]
+        return df[["card"] + keep].rename(columns={c: f"{c}_17l" for c in keep})
     if src.startswith("http"):
         with urllib.request.urlopen(src, timeout=60) as r:
             data = json.load(r)
