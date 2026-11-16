@@ -1,15 +1,16 @@
 """Predicts 17Lands GIH WR of a new set from card features, trained on older sets.
 
 Usage: python analysis/predict_model.py --features data/features.csv \
-           --train EOE FIN TDM ... [--predict TRK] [--sim] [--out tierlist.csv]
+           --train EOE FIN TDM ... [--text] [--sim-weight W] [--predict TRK] [--out tierlist.csv]
 
 The target is GIH WR standardised within each set (z-score), since only the
 order inside one set matters and sets differ in overall win rate. Evaluation is
 leave-one-set-out: each training set is predicted by a model fitted on the
 others, and the Spearman correlation with the real values is reported.
 
-With --sim, the blind simulation of each set (data/<set>_blind1/cards.csv) adds
-its GIH WR and IWD, also standardised within the set, as features.
+With --sim-weight W, the blind simulation of a set (data/<set>_blind1/cards.csv,
+see make_blind_rankings.py) is blended in: score = z(model) + W * z(sim GIH WR).
+Few sets are simulated, so the simulation is blended in rather than learned as a feature.
 """
 import argparse
 import os
@@ -39,14 +40,15 @@ def real_target(code: str, min_n: int) -> pd.DataFrame:
     return r[["card", "y", "GIH_WR"]]
 
 
-def sim_features(code: str, min_n: int = 50) -> pd.DataFrame | None:
+def sim_features(code: str, min_n: int = 10, shrink: int = 100) -> pd.DataFrame | None:
+    """Simulated GIH WR z-scores, shrunk towards 0 by n / (n + shrink) for rarely seen cards."""
     path = os.path.join(DATA, f"{code.lower()}_blind1", "cards.csv")
     if not os.path.exists(path):
         return None
     s = pd.read_csv(path)
     s = s[s["GIH_n"] >= min_n].copy()
     s["card"] = s["card"].str.split(" // ").str[0]
-    s["sim_gih"] = zscore(s["GIH_WR"])
+    s["sim_gih"] = zscore(s["GIH_WR"]) * s["GIH_n"] / (s["GIH_n"] + shrink)
     s["sim_iwd"] = zscore(s["IWD"])
     s["sim_gp"] = zscore(s["GP_WR"])
     return s[["card"] + SIM_COLS]
@@ -103,7 +105,8 @@ def main() -> None:
     ap.add_argument("--features", default=os.path.join(DATA, "features.csv"))
     ap.add_argument("--train", nargs="+", required=True)
     ap.add_argument("--predict", default=None)
-    ap.add_argument("--sim", action="store_true")
+    ap.add_argument("--sim-weight", type=float, default=0.0,
+                    help="blend in the blind simulation's GIH WR z-score with this weight")
     ap.add_argument("--text", action="store_true", help="add rules-text n-grams to the ridge model")
     ap.add_argument("--min-n", type=int, default=500, help="min 17Lands GIH games per card")
     ap.add_argument("--out", default=None)
@@ -111,13 +114,8 @@ def main() -> None:
 
     feats = pd.read_csv(args.features)
     cols = [c for c in feats.columns if c not in ("card", "set", "oracle")]
-    if args.sim:
-        cols += SIM_COLS
-
-    sets = {}
-    for code in args.train:
-        df = feats[feats["set"] == code].merge(real_target(code, args.min_n), on="card")
-        sets[code] = with_sim(df, code) if args.sim else df
+    sets = {code: feats[feats["set"] == code].merge(real_target(code, args.min_n), on="card")
+            for code in args.train}
 
     rows = []
     for code, test in sets.items():
@@ -126,9 +124,10 @@ def main() -> None:
         row = {"set": code, "cards": len(test), "rarity": spearman(test["rarity"], test["y"])}
         for w in ["ridge", "gbm", "both"]:
             row[w] = spearman(m.predict(test, w), test["y"])
-        if args.sim and test["sim_gih"].notna().any():
-            t = test[test["sim_gih"].notna()]
+        if args.sim_weight and sim_features(code) is not None:
+            t = with_sim(test, code)
             row["sim_only"] = spearman(t["sim_gih"], t["y"])
+            row["blend"] = spearman(blend(m.predict(t), t["sim_gih"], args.sim_weight), t["y"])
         rows.append(row)
     res = pd.DataFrame(rows)
     print("Leave-one-set-out Spearman with real GIH WR:")
@@ -138,16 +137,21 @@ def main() -> None:
     if args.predict:
         train = pd.concat(sets.values())
         m = Model(cols, args.text).fit(train, train["y"])
-        target = feats[feats["set"] == args.predict].copy()
-        if args.sim:
-            target = with_sim(target, args.predict)
-        target["score"] = m.predict(target)
+        target = with_sim(feats[feats["set"] == args.predict], args.predict).copy()
+        target["model"] = zscore(pd.Series(m.predict(target), index=target.index))
+        target["score"] = blend(target["model"], target["sim_gih"], args.sim_weight)
         imp = pd.Series(m.gbm.booster_.feature_importance("gain"), index=cols)
         print("\nMost important features:", ", ".join(imp.sort_values(ascending=False).index[:12]))
-        out = target[["card", "rarity", "score"]].sort_values("score", ascending=False)
+        out = target[["card", "rarity", "model", "sim_gih", "score"]].sort_values("score", ascending=False)
         if args.out:
             out.to_csv(args.out, index=False, float_format="%.3f")
         print(out.head(30).to_string(index=False))
+
+
+def blend(model_pred, sim_gih, weight: float) -> pd.Series:
+    """Model prediction (as z-score) plus weight * simulated GIH WR z-score; 0 where unsimulated."""
+    z = zscore(pd.Series(np.asarray(model_pred, dtype=float), index=sim_gih.index))
+    return z + weight * sim_gih.fillna(0)
 
 
 if __name__ == "__main__":
