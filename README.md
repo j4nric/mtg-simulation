@@ -14,6 +14,10 @@ echten Daten von 17Lands.
 | `scripts/run_sim.sh` | Drafts plus parallele Spiel-Prozesse in einem Lauf |
 | `analysis/card_stats.py` | Winrates pro Karte im Stil von 17Lands (GP, OH, GD, GIH, GNS, IWD) |
 | `analysis/compare_17lands.py` | Vergleich der Simulation mit echten 17Lands-Werten |
+| `analysis/lands17_card_stats.py` | dieselben Kennzahlen aus den öffentlichen 17Lands-Rohdaten |
+| `analysis/reliability.py` | Split-Half-Reproduzierbarkeit der Rangfolge |
+| `analysis/regression.py` | Kartenwert per logistischer Regression über alle Partien |
+| `analysis/make_blind_rankings.py` | Draft-Rangliste nur nach Seltenheit (ohne 17Lands-Wissen) |
 
 ## Ablauf
 
@@ -37,6 +41,22 @@ zwei Kerne nutzt.
 - Draft: rund 2 Sekunden pro 8er-Pod
 - Spiele: rund 3.400 Partien pro Stunde mit 2 Prozessen, keine Abstürze in den ersten 300 Partien
 - Profil: rund 60 % der Rechenzeit in KI-Entscheidungen, 40 % in der Regel-Engine
+
+## Validierung an EOE (17Lands, 563.418 echte Partien)
+
+Je rund 3.000 simulierte Partien, Spearman-Rangkorrelation mit echter GIH WR:
+
+| Variante | Spearman | Reproduzierbarkeit |
+|---|---|---|
+| nur Seltenheit (Baseline) | 0,09 | – |
+| Sim, Draft nach Forges Rangliste | 0,09 | 0,75 |
+| Sim, Draft blind nach Seltenheit | 0,33 | 0,72 |
+| Regression über beide Läufe | 0,25 | – |
+| Forges eigene Rangliste (aus 17Lands abgeleitet) | 0,98 | – |
+
+Die Simulation misst stabil, aber etwas anderes als echte Spieler: Forges KI
+überschätzt Kreaturen und unterschätzt Removal, Tricks und Counter. Mehr Partien
+helfen dagegen nicht.
 
 ## Bekannte Einschränkungen
 
