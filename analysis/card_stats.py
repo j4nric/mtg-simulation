@@ -65,23 +65,19 @@ def load_games(run_dir: str):
                     yield json.loads(line)
 
 
-def main() -> None:
-    ap = argparse.ArgumentParser()
-    ap.add_argument("run_dir")
-    ap.add_argument("--min-games", type=int, default=50, help="min GIH games for the table")
-    ap.add_argument("--out", default=None)
-    args = ap.parse_args()
+def load_decks(run_dir: str) -> dict[str, set[str]]:
+    return {os.path.basename(p)[:-4]: read_deck(p)
+            for p in glob.glob(os.path.join(run_dir, "decks", "*.dck"))}
 
-    decks: dict[str, set[str]] = {}
-    for p in glob.glob(os.path.join(args.run_dir, "decks", "*.dck")):
-        decks[os.path.basename(p)[:-4]] = read_deck(p)
 
+def compute(decks: dict[str, set[str]], games) -> tuple[pd.DataFrame, dict]:
+    """Per-card stats for the given games. Returns (table, summary)."""
     # counters[card][metric] = [wins, games]
     stats: dict[str, dict[str, list[int]]] = defaultdict(lambda: defaultdict(lambda: [0, 0]))
     n_games = n_skipped = play_wins = 0
     turns = []
 
-    for g in load_games(args.run_dir):
+    for g in games:
         if g["status"] != "ok" or g["winner"] is None:
             n_skipped += 1
             continue
@@ -119,12 +115,26 @@ def main() -> None:
         rows.append(row)
 
     df = pd.DataFrame(rows).sort_values("GIH_WR", ascending=False)
+    summary = {"games": n_games, "skipped": n_skipped,
+               "play_wr": play_wins / n_games if n_games else math.nan,
+               "median_turns": pd.Series(turns).median() if turns else math.nan}
+    return df, summary
+
+
+def main() -> None:
+    ap = argparse.ArgumentParser()
+    ap.add_argument("run_dir")
+    ap.add_argument("--min-games", type=int, default=50, help="min GIH games for the table")
+    ap.add_argument("--out", default=None)
+    args = ap.parse_args()
+
+    df, s = compute(load_decks(args.run_dir), load_games(args.run_dir))
     if args.out:
         df.to_csv(args.out, index=False, float_format="%.4f")
 
-    print(f"Games used: {n_games} (skipped draws/timeouts/errors: {n_skipped})")
-    if n_games:
-        print(f"On-the-play win rate: {play_wins / n_games:.3f}   median turns: {pd.Series(turns).median():.0f}")
+    print(f"Games used: {s['games']} (skipped draws/timeouts/errors: {s['skipped']})")
+    if s["games"]:
+        print(f"On-the-play win rate: {s['play_wr']:.3f}   median turns: {s['median_turns']:.0f}")
     shown = df[df["GIH_n"] >= args.min_games]
     print(f"Cards with >= {args.min_games} GIH games: {len(shown)} of {len(df)}\n")
     pd.set_option("display.width", 160)
