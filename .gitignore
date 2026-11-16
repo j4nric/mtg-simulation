@@ -1,3 +1,4 @@
 build/
 *.class
 data/
+__pycache__/
