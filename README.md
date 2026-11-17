@@ -18,6 +18,10 @@ echten Daten von 17Lands.
 | `analysis/reliability.py` | Split-Half-Reproduzierbarkeit der Rangfolge |
 | `analysis/regression.py` | Kartenwert per logistischer Regression über alle Partien |
 | `analysis/make_blind_rankings.py` | Draft-Rangliste nur nach Seltenheit (ohne 17Lands-Wissen) |
+| `analysis/card_features.py` | Merkmale pro Karte aus Forges Kartenskripten |
+| `analysis/predict_model.py` | Vorhersagemodell (gelernt an älteren Sets) plus Simulation |
+| `analysis/make_tierlist.py` | Tierliste als Markdown |
+| `tierlists/TRK.md` | aktuelle TRK-Tierliste |
 
 ## Ablauf
 
@@ -58,9 +62,36 @@ Die Simulation misst stabil, aber etwas anderes als echte Spieler: Forges KI
 überschätzt Kreaturen und unterschätzt Removal, Tricks und Counter. Mehr Partien
 helfen dagegen nicht.
 
+## Vorhersagemodell
+
+Die reine Simulation reicht nicht, deshalb lernt ein Modell (Ridge plus LightGBM) aus
+17 älteren Sets, wie Kartenwerte und Regeltext mit der echten GIH WR zusammenhängen.
+Die blinde Simulation des neuen Sets wird hinzuaddiert: Score = z(Modell) + 1,0 × z(Sim-GIH-WR),
+bei wenig gespielten Karten zur Mitte hin geschrumpft.
+
+Geprüft wird jedes Set mit einem Modell, das es nicht kennt (Spearman mit echter GIH WR):
+
+| Variante | EOE | DFT | BLB | Mittel 17 Sets |
+|---|---|---|---|---|
+| nur Seltenheit | 0,17 | 0,37 | 0,42 | 0,28 |
+| nur Simulation | 0,36 | 0,41 | 0,44 | – |
+| Modell | 0,51 | 0,52 | 0,56 | 0,48 |
+| Modell + Simulation | **0,55** | **0,62** | **0,63** | – |
+
+```bash
+S="EOE FIN TDM DFT DSK BLB OTJ MKM FDN WOE LCI MOM ONE BRO DMU SNC NEO"
+python analysis/card_features.py $S TRK --out data/features.csv
+scripts/run_sim.sh TRK 250 1000 2 data/trk_blind1 data/rankings/trk_blind.rnk
+python analysis/card_stats.py data/trk_blind1 --out data/trk_blind1/cards.csv
+python analysis/predict_model.py --train $S --text --sim-weight 1.0 --predict TRK --out data/trk_scores.csv
+python analysis/make_tierlist.py data/trk_scores.csv TRK tierlists/TRK.md
+```
+
 ## Bekannte Einschränkungen
 
 - Die Draft-KI pickt nach Forges Rangliste `res/draft/rankings/trk.rnk`; die Decks
   spiegeln deren Vorlieben wider.
+- Das Modell kennt die Farbstärke eines neuen Formats nicht; sobald echte 17Lands-Daten
+  da sind, sind diese besser.
 - Arenas Hand-Glättung für Bo1 ist nicht nachgebildet.
 - „Gezogen“ heißt Bibliothek → Hand, Tutoren zählen also mit.
